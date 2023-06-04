@@ -18,7 +18,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * variation消息处理; todo: 进度、完成的content不包含index，同个任务不同变换对应不上.
+ * variation消息处理. todo: 待兼容blend
  * 开始(create): Making variations for image #1 with prompt **[0152010266005012] cat** - <@1012983546824114217> (Waiting to start)
  * 进度(update): **[0152010266005012] cat** - Variations by <@1012983546824114217> (0%) (relaxed)
  * 完成(create): **[0152010266005012] cat** - Variations by <@1012983546824114217> (relaxed)
@@ -40,13 +40,14 @@ public class VariationMessageHandler extends MessageHandler {
 						.setRelatedTaskId(start.getTaskId())
 						.setActionSet(Set.of(TaskAction.VARIATION))
 						.setStatusSet(Set.of(TaskStatus.SUBMITTED));
-				Task task = this.taskService.findRunningTask(condition)
+				Task task = this.taskQueueHelper.findRunningTask(condition)
 						.filter(t -> CharSequenceUtil.endWith(t.getDescription(), "V" + start.getIndex()))
 						.min(Comparator.comparing(Task::getSubmitTime))
 						.orElse(null);
 				if (task == null) {
 					return;
 				}
+				task.setMessageId(message.getString("id"));
 				task.setStatus(TaskStatus.IN_PROGRESS);
 				task.awake();
 				return;
@@ -59,8 +60,8 @@ public class VariationMessageHandler extends MessageHandler {
 					.setRelatedTaskId(end.getTaskId())
 					.setActionSet(Set.of(TaskAction.VARIATION))
 					.setStatusSet(Set.of(TaskStatus.IN_PROGRESS));
-			Task task = this.taskService.findRunningTask(condition)
-					.min(Comparator.comparing(Task::getSubmitTime))
+			Task task = this.taskQueueHelper.findRunningTask(condition)
+					.max(Comparator.comparing(Task::getProgress))
 					.orElse(null);
 			if (task == null) {
 				return;
@@ -73,12 +74,11 @@ public class VariationMessageHandler extends MessageHandler {
 				return;
 			}
 			TaskCondition condition = new TaskCondition()
-					.setRelatedTaskId(parseData.getTaskId())
+					.setMessageId(message.getString("id"))
 					.setActionSet(Set.of(TaskAction.VARIATION))
 					.setStatusSet(Set.of(TaskStatus.IN_PROGRESS));
-			Task task = this.taskService.findRunningTask(condition)
-					.min(Comparator.comparing(Task::getSubmitTime))
-					.orElse(null);
+			Task task = this.taskQueueHelper.findRunningTask(condition)
+					.findFirst().orElse(null);
 			if (task == null) {
 				return;
 			}
@@ -89,7 +89,7 @@ public class VariationMessageHandler extends MessageHandler {
 	}
 
 	/**
-	 * bot-wss模式，取不到执行进度.
+	 * bot-wss模式，取不到执行进度; todo: 同个任务不同变换对应不上.
 	 *
 	 * @param messageType messageType
 	 * @param message     message
@@ -106,7 +106,7 @@ public class VariationMessageHandler extends MessageHandler {
 					.setRelatedTaskId(parseData.getTaskId())
 					.setActionSet(Set.of(TaskAction.VARIATION))
 					.setStatusSet(Set.of(TaskStatus.SUBMITTED, TaskStatus.IN_PROGRESS));
-			Task task = this.taskService.findRunningTask(condition)
+			Task task = this.taskQueueHelper.findRunningTask(condition)
 					.min(Comparator.comparing(Task::getSubmitTime))
 					.orElse(null);
 			if (task == null) {
